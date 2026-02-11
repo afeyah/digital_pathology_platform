@@ -10,7 +10,7 @@ import matplotlib.gridspec as gridspec
 import openslide
 import random
 from PIL import Image, ImageOps 
-from src.builder import create_model
+from ../src.builder import create_model
 from scipy.ndimage import gaussian_filter, maximum_filter
 
 # ----------------- CONFIGURATION -----------------
@@ -40,7 +40,7 @@ def find_file(root, filename_pattern):
 
 def create_base_matrix(coords, attention_scores, slide_dims, patch_size=256):
     """
-    Creates the raw mathematical matrix of attention scores.
+    Attention Scores Matrix.
     """
     slide_w, slide_h = slide_dims
     grid_h = int(slide_h // patch_size) + 1
@@ -72,7 +72,7 @@ def generate_cloud_report(slide_path, coords, attention, pred_label, confidence,
         if attention.dim() > 1 and attention.shape[1] > 1: attention = attention.mean(dim=1)
     attention = attention.view(-1).cpu()
 
-    # 1. Load Slide & Thumbnail
+    # Load Slide & Thumbnail
     try:
         wsi = openslide.OpenSlide(slide_path)
         slide_dims = wsi.dimensions
@@ -80,36 +80,36 @@ def generate_cloud_report(slide_path, coords, attention, pred_label, confidence,
         thumbnail = wsi.get_thumbnail((2000, 2000)).convert("RGB")
         thumb_size = thumbnail.size
     except Exception as e:
-        print(f"❌ Error reading slide: {e}")
+        print(f"Error reading slide: {e}")
         return
 
-    # 2. Create The "Organic Cloud"
-    # Step A: Create raw matrix
+    
+    # Create raw matrix
     raw_matrix = create_base_matrix(coords, attention, slide_dims, PATCH_SIZE)
     if raw_matrix.max() > 0: norm_matrix = raw_matrix / raw_matrix.max()
     else: norm_matrix = raw_matrix
 
-    # Step B: Dilation (Connect the dots)
+    # Connection (Connect the dots)
     # We expand every dot by 1 pixel so neighbors touch
-    dilated_matrix = maximum_filter(norm_matrix, size=2) 
+    connected_matrix = maximum_filter(norm_matrix, size=2) 
 
-    # Step C: Resize to Thumbnail & Heavy Blur
-    img_dilated = Image.fromarray((dilated_matrix * 255).astype(np.uint8))
-    heatmap_cloud = np.array(img_dilated.resize(thumb_size, resample=Image.BILINEAR))
+    # Resize to Thumbnail & Heavy Blur
+    img_connected = Image.fromarray((connected_matrix * 255).astype(np.uint8))
+    heatmap_cloud = np.array(img_connected.resize(thumb_size, resample=Image.BILINEAR))
     
-    # Sigma=15 creates that smooth, weather-map fog effect
+    # Sigma=15 creates smooth, fog effect
     heatmap_cloud = gaussian_filter(heatmap_cloud, sigma=15)
 
-    # 3. Setup Report Layout
+    # Setup Report Layout
     plt.figure(figsize=(20, 12))
     gs = gridspec.GridSpec(2, 3, height_ratios=[1, 0.35])
 
-    # --- MAIN HEATMAP (Spans Top Row) ---
+    # --- MAIN HEATMAP (Top Row) ---
     ax_map = plt.subplot(gs[0, :])
     ax_map.imshow(thumbnail)
     
-    # Mask out low values so the background tissue is visible
-    # Values < 10 (out of 255) become transparent
+    # Mask low values so the background tissue is visible
+    # Values < 10/255 transparent
     masked_cloud = np.ma.masked_where(heatmap_cloud < 10, heatmap_cloud)
     
     # 'jet' gives the classic blue->red look. 
@@ -165,7 +165,7 @@ def generate_cloud_report(slide_path, coords, attention, pred_label, confidence,
     plt.tight_layout()
     plt.savefig(save_path, dpi=200)
     plt.close()
-    print(f"✓ Report saved: {save_path}")
+    print(f"Report saved: {save_path}")
 
 # ----------------- INFERENCE LOGIC -----------------
 
@@ -176,7 +176,7 @@ def run_inference(slide_name, root_dir, model_path):
     h5_path = find_file(root_dir, f"{slide_name}*.h5")
     slide_path = find_file(root_dir, f"{slide_name}*.svs")
     if not slide_path: slide_path = find_file(root_dir, f"{slide_name}*.tif")
-    if not h5_path: return print("❌ H5 not found.")
+    if not h5_path: return print("H5 not found.")
 
     model = create_model(MODEL_NAME, num_classes=2, dropout=0, from_pretrained=False, checkpoint_path=LOCAL_UNI_WEIGHTS)
     state_dict = torch.load(model_path, map_location=DEVICE)

@@ -4,7 +4,7 @@ from datetime import datetime
 import enum
 import bcrypt
 
-# 1. Setup
+# Setup
 DATABASE_URL = "sqlite:///cancer_detection.db"
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -15,7 +15,7 @@ class UserRole(enum.Enum):
     ADMIN = "admin"
     PATHOLOGIST = "pathologist"
 
-# 2. Define Entities
+# Define Entities
 
 class User(Base):
     __tablename__ = "users"
@@ -81,12 +81,12 @@ class Heatmap(Base):
     
     report = relationship("Report", back_populates="heatmaps")
 
-# 3. Initialization
+# Initialization
 def init_db():
     Base.metadata.create_all(bind=engine)
     print("Database initialized with Unified User Table!")
 
-# 4. Helper to Create Users
+# Helper to Create Users
 def create_initial_users():
     db = SessionLocal()
     
@@ -109,20 +109,20 @@ def create_initial_users():
 
 def hash_password(plain_password: str) -> str:
     """Takes a plain password and returns a hashed string to store in DB."""
-    # 1. Convert string to bytes
+    #Convert string to bytes
     password_bytes = plain_password.encode('utf-8') 
-    # 2. Generate salt and hash
+    # Generate salt and hash
     hashed_bytes = bcrypt.hashpw(password_bytes, bcrypt.gensalt())
-    # 3. Decode back to string so it can be stored in SQLite
+    # Decode back to string so it can be stored in SQLite
     return hashed_bytes.decode('utf-8')
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Checks if the plain password matches the stored hash."""
-    # 1. Convert plain password to bytes
+    # Convert plain password to bytes
     password_bytes = plain_password.encode('utf-8')
-    # 2. Convert stored hash string back to bytes
+    # Convert stored hash string back to bytes
     hashed_bytes = hashed_password.encode('utf-8')
-    # 3. Check if they match
+    # Check if they match
     return bcrypt.checkpw(password_bytes, hashed_bytes)
 
 if __name__ == "__main__":

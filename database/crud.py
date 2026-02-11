@@ -99,8 +99,7 @@ def create_report(db: Session, user_id: int, wsi_id: int):
 
 def save_roi(db: Session, report_id: int, coordinates: dict):
     """Saves a drawn box (ROI) to a report."""
-    # coordinates is expected to be a Dict like {'x': 10, 'y': 20...}
-    # SQLAlchemy handles converting this Dict to JSON automatically.
+    # coordinates must be Dict like {'x': 10, 'y': 20...}
     new_roi = ROI(
         report_id=report_id,
         coordinates=coordinates 
