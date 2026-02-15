@@ -1,28 +1,30 @@
-# File: app/pages/viewer_page.py
-from nicegui import ui
+from nicegui import ui, app
 from app.components.base_layout import base_page_layout
 from app.components.viewer_sidebar import viewer_sidebar
 from app.components.viewer_canvas import viewer_canvas
-from app.components.viewer_toolbar import viewer_toolbar # New import
+from app.components.viewer_toolbar import viewer_toolbar
+from app.database import crud
+from app.database.create_database import SessionLocal
 
 @ui.page('/viewer')
-def viewer_page():
-    with base_page_layout('Interactive WSI Viewer'):
-        # Add the toolbar at the top of the content area
+def viewer_page(id: str = 'Unknown'): # Capture 'id' from URL
+    # Fetch patient name from DB to show in the title
+    patient_name = "Loading..."
+    with SessionLocal() as db:
+        patient = crud.get_all_patients(db) # In a real scenario, use get_patient_by_id
+        # For now, let's just display the ID in the layout
+    
+    with base_page_layout(f'Viewer: Case {id}'):
         viewer_toolbar()
 
-        # Split layout for Canvas and Sidebar
         with ui.splitter(value=75).classes('w-full h-[80vh] border shadow-lg bg-white') as splitter:
-            
             with splitter.before:
-                # Main WSI display area
                 viewer_canvas()
 
             with splitter.after:
-                # Metadata and ROI info panel
+                # You can pass the ID to the sidebar to show specific ROI data
                 viewer_sidebar()
 
-        # Footer-style navigation
         with ui.row().classes('w-full justify-end mt-4'):
             ui.button('Back to Dashboard', icon='arrow_back', 
                       on_click=lambda: ui.navigate.to('/dashboard')) \

@@ -34,3 +34,10 @@ htmlcov/
 
 # Database
 *.db
+
+# VS Code specific settings
+.vscode/
+
+# NiceGUI persistent storage files (local to your machine)
+.nicegui/
+storage_*.json

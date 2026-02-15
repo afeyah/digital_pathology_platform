@@ -1,5 +1,7 @@
+# File: app/database/crud.py
 from sqlalchemy.orm import Session
-from create-database import User, Patient, WSI, Report, ROI, Heatmap, hash_password
+# FIX: Use underscore instead of hyphen and absolute path for reliability
+from app.database.create_database import User, Patient, WSI, Report, ROI, Heatmap, hash_password
 from datetime import datetime
 
 # ------------------------------------------
@@ -7,8 +9,8 @@ from datetime import datetime
 # ------------------------------------------
 
 def create_user(db: Session, name: str, username: str, password: str, role, professional_id: str = None):
-    """Creates a new user with a hashed password."""
-    # Hash the password before saving!
+    """Creates a new user with a hashed password for the pathology platform."""
+    # Hash the password before saving to the database
     hashed_pw = hash_password(password)
     
     new_user = User(
@@ -24,15 +26,15 @@ def create_user(db: Session, name: str, username: str, password: str, role, prof
     return new_user
 
 def get_user_by_username(db: Session, username: str):
-    """Finds a user by username (useful for login)."""
+    """Finds a specific user by their username (primary login method)."""
     return db.query(User).filter(User.username == username).first()
 
 def get_all_users(db: Session):
-    """Returns a list of all users."""
+    """Returns a comprehensive list of all registered users."""
     return db.query(User).all()
 
 def delete_user(db: Session, user_id: int):
-    """Deletes a user by ID."""
+    """Removes a user from the system by their primary ID."""
     user = db.query(User).filter(User.id == user_id).first()
     if user:
         db.delete(user)
@@ -45,11 +47,11 @@ def delete_user(db: Session, user_id: int):
 # ------------------------------------------
 
 def create_patient(db: Session, name: str, case_id: str):
-    """Adds a new patient case."""
-    # Check if case_id already exists to prevent errors
+    """Adds a new patient clinical case to the dashboard."""
+    # Check if case_id already exists to prevent duplicate entries
     existing = db.query(Patient).filter(Patient.case_id == case_id).first()
     if existing:
-        return None # Or raise an error
+        return None 
         
     new_patient = Patient(name=name, case_id=case_id)
     db.add(new_patient)
@@ -58,11 +60,11 @@ def create_patient(db: Session, name: str, case_id: str):
     return new_patient
 
 def get_all_patients(db: Session):
-    """Gets all patients, usually for the Pathologist dashboard list."""
+    """Retrieves all patient records for the main management dashboard."""
     return db.query(Patient).all()
 
 def add_wsi_to_patient(db: Session, patient_id: int, file_path: str):
-    """Links a WSI file to a specific patient."""
+    """Links a Whole Slide Image (WSI) file path to a specific patient case."""
     new_wsi = WSI(patient_id=patient_id, file_path=file_path)
     db.add(new_wsi)
     db.commit()
@@ -70,10 +72,7 @@ def add_wsi_to_patient(db: Session, patient_id: int, file_path: str):
     return new_wsi
 
 def delete_patient(db: Session, patient_id: int):
-    """Deletes a patient. 
-    NOTE: Because of 'cascade' in database.py, this also deletes 
-    all their WSIs, Reports, and ROIs automatically.
-    """
+    """Deletes a patient and triggers cascade deletion of slides and reports."""
     patient = db.query(Patient).filter(Patient.id == patient_id).first()
     if patient:
         db.delete(patient)
@@ -86,7 +85,7 @@ def delete_patient(db: Session, patient_id: int):
 # ------------------------------------------
 
 def create_report(db: Session, user_id: int, wsi_id: int):
-    """Starts a new analysis run (report) for a specific slide."""
+    """Initializes a new analysis report for a pathology slide."""
     new_report = Report(
         user_id=user_id,
         wsi_id=wsi_id,
@@ -98,8 +97,7 @@ def create_report(db: Session, user_id: int, wsi_id: int):
     return new_report
 
 def save_roi(db: Session, report_id: int, coordinates: dict):
-    """Saves a drawn box (ROI) to a report."""
-    # coordinates must be Dict like {'x': 10, 'y': 20...}
+    """Saves a Region of Interest (ROI) box coordinates to a specific report."""
     new_roi = ROI(
         report_id=report_id,
         coordinates=coordinates 
@@ -109,7 +107,7 @@ def save_roi(db: Session, report_id: int, coordinates: dict):
     return new_roi
 
 def save_heatmap(db: Session, report_id: int, image_path: str):
-    """Saves a generated heatmap path to a report."""
+    """Stores the file path of a generated AI heatmap for an analysis."""
     new_heatmap = Heatmap(
         report_id=report_id,
         image_path=image_path
@@ -119,5 +117,5 @@ def save_heatmap(db: Session, report_id: int, image_path: str):
     return new_heatmap
 
 def get_report_details(db: Session, report_id: int):
-    """Gets a report and all its associated ROIs."""
+    """Retrieves full report details including all associated ROIs."""
     return db.query(Report).filter(Report.id == report_id).first()
