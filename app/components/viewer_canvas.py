@@ -1,12 +1,13 @@
 # File: app/components/viewer_canvas.py
 from nicegui import ui
 from app.state import viewer_state
-from app.database import crud  # Pastikan file ini ada di proyekmu
+from app.database import crud
+from app.database.create_database import SessionLocal
 
 def viewer_canvas():
     """
     Advanced WSI Viewer with OSD and Database Persistence.
-
+    Menghubungkan anotasi frontend ke backend database.
     """
     # 1. Load OSD and Annotation Plugin
     ui.add_head_html('<script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/openseadragon.min.js"></script>')
@@ -33,10 +34,9 @@ def viewer_canvas():
             showControls: true
         });
 
-        // Event listener: Triggered when finished drawing a box
+        // Event listener: Mengirim data koordinat ke Python saat kotak selesai digambar
         annotations.on('annotation-created', function(event) {
             const bounds = event.annotation.getBounds();
-            // Send standardized coordinates back to Python
             emitEvent('roi_to_db', {
                 x: bounds.x, 
                 y: bounds.y, 
@@ -46,29 +46,27 @@ def viewer_canvas():
         });
     ''')
 
-    # 4. Handle the event in Python and save to database
+
     ui.on('roi_to_db', lambda e: handle_save_roi(e.args))
 
 async def handle_save_roi(data):
     """
-    Saves the ROI coordinates to the database and updates the global state.
+    Menyimpan koordinat ROI ke database dan memperbarui state global.
     """
     try:
-        # Save to global state for immediate UI feedback
+
         viewer_state.add_annotation({
             'x': data['x'], 'y': data['y'], 
             'w': data['width'], 'h': data['height']
         })
 
-        # Save to database using CRUD service
-        # Assuming case_id is currently selected in your app
-        success = await crud.save_roi(
-            case_id="Case-001",  # Ganti dengan ID kasus yang aktif
-            x=data['x'], 
-            y=data['y'], 
-            w=data['width'], 
-            h=data['height']
-        )
+
+        with SessionLocal() as db:
+            success = await crud.save_roi(
+                db=db,            
+                report_id=1,       
+                coordinates=data  
+            )
 
         if success:
             ui.notify("ROI saved to database!", type='positive')

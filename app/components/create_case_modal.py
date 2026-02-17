@@ -1,4 +1,8 @@
+# File: app/components/create_case_modal.py
 from nicegui import ui
+import asyncio 
+from app.database import crud
+from app.database.create_database import SessionLocal
 
 def create_case_modal():
     state = {'file_ready': False}
@@ -10,15 +14,12 @@ def create_case_modal():
                               on_change=lambda: update_button_state()) \
                         .classes('w-full')
         
-        # We don't put 'on_added' inside ui.upload()
         uploader = ui.upload(label='Upload WSI (.svs)', 
                              auto_upload=True) \
                      .classes('w-full mt-4') \
                      .props('accept=.svs')
         
-        # Use .on('added', ...) to detect file arrival instantly
         uploader.on('added', lambda e: handle_file_added(e))
-        # -------------------------
 
         status_label = ui.label('Waiting for file...').classes('text-sm text-gray-500 mt-2')
         progress_bar = ui.linear_progress(value=0, show_value=False).classes('w-full mt-1')
@@ -26,7 +27,6 @@ def create_case_modal():
 
         def handle_file_added(e):
             state['file_ready'] = True
-            # Get the file name from the event
             file_name = e.args[0]['name'] if 'name' in e.args[0] else 'SVS File'
             status_label.set_text(f'Ready: {file_name}')
             status_label.classes(replace='text-gray-500 text-green-600')
@@ -36,18 +36,39 @@ def create_case_modal():
             has_name = len(name_input.value.strip()) > 0
             create_btn.enabled = has_name and state['file_ready']
 
-        with ui.row().classes('w-full justify-end mt-6'):
-            ui.button('Cancel', on_click=dialog.close).props('flat')
-            create_btn = ui.button('CREATE', on_click=lambda: finalize_case())
-            create_btn.classes('bg-[#0056B3]')
-            create_btn.enabled = False 
-
         async def finalize_case():
-            status_label.set_text('Extracting metadata...')
+            status_label.set_text('Saving to database...')
             progress_bar.visible = True
             progress_bar.set_value(0.5)
-            await ui.run_javascript('await new Promise(r => setTimeout(r, 1500))')
-            ui.notify(f"Case for {name_input.value} created!", type='positive')
-            dialog.close()
+
+            try:
+
+                with SessionLocal() as db:
+
+                    new_patient = crud.create_patient(
+                        db=db, 
+                        name=name_input.value, 
+                        case_id=f"{id(name_input.value) % 10000}" 
+                    )
+
+
+                await asyncio.sleep(1.5) 
+                
+                ui.notify(f"Case for {name_input.value} created!", type='positive')
+                dialog.close()
+                
+
+                ui.navigate.to('/dashboard') 
+
+            except Exception as e:
+                ui.notify(f"Error: {str(e)}", type='negative')
+            finally:
+                progress_bar.visible = False
+
+        with ui.row().classes('w-full justify-end mt-6'):
+            ui.button('Cancel', on_click=dialog.close).props('flat')
+            create_btn = ui.button('CREATE', on_click=finalize_case) # Langsung panggil fungsi async
+            create_btn.classes('bg-[#0056B3] text-white')
+            create_btn.enabled = False 
             
     return dialog

@@ -5,7 +5,11 @@ from app.database.create_database import SessionLocal, verify_password
 
 @ui.page('/login')
 def login_page():
-    # Force a check: if no users exist in the DB, redirect to setup immediately
+    """
+    Halaman Login Path-Benchmark Platform.
+    Memeriksa ketersediaan user dan memverifikasi kredensial.
+    """
+    
     with SessionLocal() as db:
         if not crud.get_all_users(db):
             ui.navigate.to('/setup')
@@ -31,14 +35,14 @@ def login_page():
             spinner.visible = True
 
             try:
-                # Use real database session
+                # Gunakan sesi database asli
                 with SessionLocal() as db:
                     user = crud.get_user_by_username(db, username_input.value)
                     
-                    # Verify password using the bcrypt helper
-                    if user and verify_password(password_input.value, user.password):
+
+                    if user and verify_password(password_input.value, str(user.password)):
                         ui.notify(f"Welcome, {user.name}", type='positive')
-                        ui.navigate.to('/dashboard') # Proceed to Task 1
+                        ui.navigate.to('/dashboard') 
                     else:
                         ui.notify('Invalid username or password', type='negative')
 
