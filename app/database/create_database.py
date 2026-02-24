@@ -2,7 +2,7 @@
 from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.orm import sessionmaker
 import bcrypt
-from app.database.models import Base, User, Patient, WSI, Report, ROI, Heatmap, UserRole
+from app.database.models import Base, User, Patient, WSI, Report, ROI, UserRole
 
 # --- Configuration ---
 

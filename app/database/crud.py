@@ -1,7 +1,7 @@
 import os
 from sqlalchemy.orm import Session
 from typing import Optional, List, Any
-from app.database.create_database import User, Patient, WSI, Setting, Report, ROI, hash_password
+from app.database.create_database import User, Patient, WSI, Setting, Report, ROI, UserRole, hash_password
 
 
 # =========================================================
@@ -18,17 +18,29 @@ def create_user(
     name: str,
     username: str,
     password: str,
-    role: str,
+    role: UserRole | str,
     professional_id: Optional[str] = None
 ) -> User:
     """Creates a new user with secure hashed password."""
     hashed_pw = hash_password(password)
+    normalized_role: UserRole
+    if isinstance(role, UserRole):
+        normalized_role = role
+    else:
+        role_text = str(role).strip()
+        try:
+            normalized_role = UserRole(role_text.lower())
+        except ValueError:
+            try:
+                normalized_role = UserRole[role_text.upper()]
+            except KeyError as ex:
+                raise ValueError(f"Invalid user role: {role_text}") from ex
 
     new_user = User(
         name=name,
         username=username,
         password=hashed_pw,
-        role=role,
+        role=normalized_role,
         professional_id=professional_id
     )
     db.add(new_user)

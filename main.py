@@ -1,5 +1,7 @@
 import os
 import sys
+from fastapi import HTTPException
+from fastapi.responses import FileResponse
 from nicegui import ui, app as ng_app
 
 from app.database import crud
@@ -15,6 +17,28 @@ import app.pages.dashboard_page
 import app.pages.viewer_page
 import app.pages.report_page
 import app.pages.settings_page
+
+
+@ng_app.get('/dzi/{patient_id}/{asset_path:path}')
+def serve_dzi_asset(patient_id: int, asset_path: str):
+    if not asset_path:
+        raise HTTPException(status_code=404)
+
+    with SessionLocal() as db:
+        storage_path = crud.get_effective_path(db)
+
+    storage_root = os.path.normpath(storage_path)
+    requested_path = os.path.normpath(os.path.join(storage_path, asset_path))
+
+    if not requested_path.startswith(storage_root):
+        raise HTTPException(status_code=404)
+
+    if not os.path.isfile(requested_path):
+        raise HTTPException(status_code=404)
+
+    response = FileResponse(requested_path)
+    response.headers['x-patient-id'] = str(patient_id)
+    return response
 
 
 def _configure_stdio_for_unicode() -> None:

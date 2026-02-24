@@ -2,6 +2,7 @@ import os
 import asyncio
 import time
 from concurrent.futures import ProcessPoolExecutor
+from typing import Callable, Optional
 
 process_pool = ProcessPoolExecutor(max_workers=1)
 
@@ -33,7 +34,21 @@ from openslide.deepzoom import DeepZoomGenerator
 # 2. CORE LOGIC: DEEP ZOOM GENERATION
 # -------------------------------------------------------------------------
 
-def convert_svs_to_dzi(svs_file_name, storage_folder):
+def _emit_progress(progress_callback: Optional[Callable[[float], None]], value: float) -> None:
+    if progress_callback is None:
+        return
+    try:
+        progress_callback(max(0.0, min(1.0, float(value))))
+    except Exception:
+        # Progress updates should never break tiling.
+        pass
+
+
+def convert_svs_to_dzi(
+    svs_file_name: str,
+    storage_folder: str,
+    progress_callback: Optional[Callable[[float], None]] = None,
+):
     """
     Generates Deep Zoom Image (DZI) tiles from an SVS file.
     Required for high-performance viewing in OpenSeadragon [cite: 2026-02-18].
@@ -51,6 +66,7 @@ def convert_svs_to_dzi(svs_file_name, storage_folder):
 
     slide = None
     try:
+        _emit_progress(progress_callback, 0.0)
         svs_path = os.path.join(storage_folder, svs_file_name)
         if not os.path.exists(svs_path):
             print(f'Error: File not found at {svs_path}')
@@ -67,7 +83,12 @@ def convert_svs_to_dzi(svs_file_name, storage_folder):
             f.write(tiles.get_dzi('jpeg'))
 
         os.makedirs(folder_path, exist_ok=True)
-        generated_tiles = 0
+        total_tiles = 0
+        for level in range(tiles.level_count):
+            cols, rows = tiles.level_tiles[level]
+            total_tiles += cols * rows
+
+        processed_tiles = 0
 
         for level in range(tiles.level_count):
             level_dir = os.path.join(folder_path, str(level))
@@ -76,8 +97,11 @@ def convert_svs_to_dzi(svs_file_name, storage_folder):
             cols, rows = tiles.level_tiles[level]
             for col in range(cols):
                 for row in range(rows):
+                    processed_tiles += 1
                     tile_path = os.path.join(level_dir, f'{col}_{row}.jpeg')
                     if os.path.exists(tile_path):
+                        if total_tiles > 0 and processed_tiles % 16 == 0:
+                            _emit_progress(progress_callback, processed_tiles / total_tiles)
                         continue
 
                     tile = None
@@ -88,10 +112,13 @@ def convert_svs_to_dzi(svs_file_name, storage_folder):
                         if tile is not None and hasattr(tile, 'close'):
                             tile.close()
 
-                    generated_tiles += 1
-                    if generated_tiles % 32 == 0:
+                    if total_tiles > 0 and processed_tiles % 16 == 0:
+                        _emit_progress(progress_callback, processed_tiles / total_tiles)
+
+                    if processed_tiles % 32 == 0:
                         time.sleep(0.01)
 
+        _emit_progress(progress_callback, 1.0)
         print(f'Success: Deep Zoom Tiles created for {svs_file_name}')
         return True
     except Exception as e:

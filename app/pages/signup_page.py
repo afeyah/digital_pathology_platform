@@ -15,7 +15,11 @@ def signup_page():
         password = ui.input('Password', password=True).classes('w-full mt-2').props('outlined')
 
         async def handle_signup():
-            if not all([full_name.value, username.value, password.value]):
+            name_value = str(full_name.value or '').strip()
+            username_value = str(username.value or '').strip()
+            password_value = str(password.value or '')
+
+            if not all([name_value, username_value, password_value]):
                 ui.notify('Please fill all fields', type='warning')
                 return
 
@@ -24,9 +28,9 @@ def signup_page():
                     # New users created here default to PATHOLOGIST role
                     new_user = crud.create_user(
                         db=db, 
-                        name=full_name.value, 
-                        username=username.value, 
-                        password=password.value, 
+                        name=name_value,
+                        username=username_value,
+                        password=password_value,
                         role=UserRole.PATHOLOGIST 
                     )
                     

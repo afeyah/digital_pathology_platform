@@ -32,7 +32,10 @@ def login_page():
 
         async def try_login():
             """Verifies user credentials and establishes a session."""
-            if not username_input.value or not password_input.value:
+            username_value = str(username_input.value or '').strip()
+            password_value = str(password_input.value or '')
+
+            if not username_value or not password_value:
                 ui.notify('Please fill in all fields!', type='warning')
                 return
 
@@ -41,10 +44,10 @@ def login_page():
 
             try:
                 with SessionLocal() as db:
-                    user = crud.get_user_by_username(db, username_input.value)
+                    user = crud.get_user_by_username(db, username_value)
                     
                     # Verify password against hashed database entry
-                    if user and verify_password(password_input.value, str(user.password)):
+                    if user and verify_password(password_value, str(user.password)):
                         # Store session data
                         app.storage.user.update({
                             'username': user.username,

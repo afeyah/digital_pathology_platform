@@ -31,12 +31,12 @@ def _event_payload(args: Any) -> Dict[str, Any]:
 
 
 def _resolve_wsi(db, identifier: int) -> Optional[WSI]:
-    # Keep compatibility with existing dashboard navigation (/viewer/{wsi_id})
-    # while also supporting /viewer/{patient_id} lookups.
-    by_wsi_id = db.query(WSI).filter(WSI.id == identifier).first()
-    if by_wsi_id:
-        return by_wsi_id
-    return db.query(WSI).filter(WSI.patient_id == identifier).order_by(WSI.id.desc()).first()
+    # Route parameter is patient_id; prefer patient lookup to avoid id-collision
+    # ambiguity between patient IDs and WSI IDs.
+    by_patient_id = db.query(WSI).filter(WSI.patient_id == identifier).order_by(WSI.id.desc()).first()
+    if by_patient_id:
+        return by_patient_id
+    return db.query(WSI).filter(WSI.id == identifier).first()
 
 
 def _get_current_user_id(db) -> Optional[int]:
@@ -100,7 +100,7 @@ def _load_report_rois(db, report_id: int) -> List[Dict[str, Any]]:
             continue
         rois.append(
             {
-                'id': roi.id,
+                'id': int(roi.id),
                 'x': x,
                 'y': y,
                 'width': width,
@@ -187,19 +187,24 @@ def viewer_page(patient_id: int):
             ui.navigate.to('/dashboard')
             return
 
-        wsi_id = wsi.id
-        patient_ref = wsi.patient_id
-        file_path = wsi.file_path
+        wsi_id = int(wsi.id)
+        patient_ref = int(wsi.patient_id) if wsi.patient_id is not None else None
+        file_path = (wsi.file_path or '').strip()
+        if not file_path:
+            ui.notify('WSI file path is missing', type='negative')
+            ui.navigate.to('/dashboard')
+            return
         case_id = getattr(wsi.patient, 'case_id', f'WSI-{wsi.id}')
         storage_path = crud.get_effective_path(db)
         report = crud.get_or_create_report_for_wsi(db, wsi_id, user_id=_get_current_user_id(db))
-        report_id = report.id
+        report_id = int(report.id)
         roi_items: List[Dict[str, Any]] = _load_report_rois(db, report_id)
 
     svs_full_path = os.path.join(storage_path, file_path)
     base_name, _ = os.path.splitext(file_path)
     dzi_file_name = f'{base_name}.dzi'
-    dzi_url = f"/wsi_static/{quote(dzi_file_name.replace('\\', '/').lstrip('/'), safe='/')}"
+    viewer_identifier = patient_ref if patient_ref is not None else identifier
+    dzi_url = f"/dzi/{viewer_identifier}/{quote(dzi_file_name.replace('\\', '/').lstrip('/'), safe='/')}"
 
     metadata = _extract_slide_metadata(svs_full_path)
     viewer_key = f'wsi_{wsi_id}'
@@ -213,7 +218,7 @@ def viewer_page(patient_id: int):
             success = await run.io_bound(convert_svs_to_dzi, file_path, storage_path)
             if success and dzi_assets_exist(file_path, storage_path):
                 ui.notify('Tiles generated successfully', type='positive')
-                ui.navigate.to(f'/viewer/{wsi_id}')
+                ui.navigate.to(f'/viewer/{viewer_identifier}')
             else:
                 ui.notify('Failed to generate tiles', type='negative')
 
@@ -226,13 +231,12 @@ def viewer_page(patient_id: int):
             return
 
         analysis_state = {'status': 'PENDING'}
-        analysis_label_ref = {'label': None}
+        analysis_label: Optional[Any] = None
 
         def set_analysis_status(status: str) -> None:
             analysis_state['status'] = status
-            label = analysis_label_ref.get('label')
-            if label is not None:
-                label.set_text(f'AI Status: {status}')
+            if analysis_label is not None:
+                analysis_label.set_text(f'AI Status: {status}')
 
         def refresh_saved_overlays() -> None:
             rois_js = json.dumps(
@@ -325,7 +329,7 @@ def viewer_page(patient_id: int):
 
             roi_items.append(
                 {
-                    'id': roi.id,
+                    'id': int(roi.id),
                     'x': normalized['x'],
                     'y': normalized['y'],
                     'width': normalized['width'],
@@ -334,7 +338,7 @@ def viewer_page(patient_id: int):
             )
             roi_list_component.refresh()
             refresh_saved_overlays()
-            ui.notify(f'ROI #{roi.id} saved', type='positive')
+            ui.notify(f'ROI #{int(roi.id)} saved', type='positive')
 
         ui.on(roi_event_name, handle_roi_saved)
 
@@ -376,7 +380,7 @@ def viewer_page(patient_id: int):
                 with ui.card().classes('w-full'):
                     ui.label('AI Analysis').classes('text-lg font-semibold')
                     ui.separator()
-                    analysis_label_ref['label'] = ui.label(f'AI Status: {analysis_state["status"]}').classes('text-sm')
+                    analysis_label = ui.label(f'AI Status: {analysis_state["status"]}').classes('text-sm')
 
         trigger_ai_analysis(update_status=set_analysis_status, notify=False)
 
@@ -790,21 +794,25 @@ def viewer_page(patient_id: int):
                 window.addEventListener('resize', onWindowResize);
                 document.addEventListener('fullscreenchange', onFullscreenChange);
 
+                const handleContainerResize = (entry) => {
+                    const width = Number(entry?.contentRect?.width || 0);
+                    const height = Number(entry?.contentRect?.height || 0);
+                    if (width <= 0 || height <= 0) {
+                        return;
+                    }
+                    if (viewer.viewport?.resize) {
+                        viewer.viewport.resize();
+                    }
+                    if (typeof viewer.forceRedraw === 'function') {
+                        viewer.forceRedraw();
+                    }
+                    safeRefresh();
+                };
+
                 if (typeof ResizeObserver !== 'undefined') {
                     resizeObserver = new ResizeObserver((entries) => {
                         for (const entry of entries) {
-                            const width = Number(entry.contentRect?.width || 0);
-                            const height = Number(entry.contentRect?.height || 0);
-                            if (width <= 0 || height <= 0) {
-                                continue;
-                            }
-                            if (viewer.viewport?.resize) {
-                                viewer.viewport.resize();
-                            }
-                            if (typeof viewer.forceRedraw === 'function') {
-                                viewer.forceRedraw();
-                            }
-                            safeRefresh();
+                            handleContainerResize(entry);
                         }
                     });
                     resizeObserver.observe(container);

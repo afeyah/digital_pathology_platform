@@ -1,11 +1,12 @@
 import asyncio
 import os
+import threading
 from nicegui import ui, run
 from app.components.base_layout import base_page_layout
 from app.components.create_case_modal import create_case_modal
 from app.database import crud
-from app.database.create_database import SessionLocal 
-from app.services.wsi_service import get_dzi_paths, run_tiling_process
+from app.database.create_database import SessionLocal
+from app.services.wsi_service import convert_svs_to_dzi, get_dzi_paths
 
 @ui.page('/dashboard')
 def dashboard_page():
@@ -16,11 +17,6 @@ def dashboard_page():
     
     new_case_modal = create_case_modal()
     view_lock = asyncio.Lock()
-
-    with ui.dialog().props('persistent no-esc-dismiss no-backdrop-dismiss no-route-dismiss') as loading_dialog, ui.card().classes('w-[520px] p-6'):
-        with ui.row().classes('items-center gap-3'):
-            ui.spinner(size='lg', color='primary')
-            ui.label('Optimizing Slide for High-Resolution Viewing... Please wait.').classes('text-sm')
 
     def _event_value(args):
         """Normalize NiceGUI table slot event args (often wrapped in a list)."""
@@ -59,7 +55,6 @@ def dashboard_page():
             return
 
         async with view_lock:
-            dialog_open = False
             try:
                 with SessionLocal() as db:
                     wsi = crud.get_latest_wsi_for_patient(db, normalized_patient_id)
@@ -74,32 +69,73 @@ def dashboard_page():
                     ui.navigate.to(f"/viewer/{normalized_patient_id}")
                     return
 
-                loading_dialog.open()
-                dialog_open = True
-                await asyncio.sleep(0.5)
+                progress_state = {'value': 0.0, 'ready': False, 'failed': False}
+                progress_lock = threading.Lock()
+
+                def update_progress(value: float) -> None:
+                    with progress_lock:
+                        progress_state['value'] = max(0.0, min(1.0, float(value)))
+
+                with ui.card().classes('fixed bottom-4 right-4 z-50 w-72 p-4 shadow-lg bg-white border rounded-lg') as progress_card:
+                    ui.label('Optimizing slide tiles...').classes('text-xs text-gray-700')
+                    progress_bar = ui.linear_progress(value=0.0).props('color=primary').classes('w-full')
+                    progress_label = ui.label('0%').classes('text-xs text-gray-600 mt-1')
+                    open_button = ui.button(
+                        'Open Viewer',
+                        on_click=lambda: ui.navigate.to(f"/viewer/{normalized_patient_id}"),
+                    ).classes('w-full mt-2 bg-[#0056B3] text-white text-xs')
+                    open_button.visible = False
+
+                def refresh_progress_card() -> None:
+                    with progress_lock:
+                        value = float(progress_state['value'])
+                        ready = bool(progress_state['ready'])
+                        failed = bool(progress_state['failed'])
+
+                    progress_bar.value = value
+                    if ready:
+                        progress_bar.value = 1.0
+                        progress_label.set_text('Ready!')
+                        open_button.visible = True
+                        progress_timer.active = False
+                        return
+                    if failed:
+                        progress_label.set_text('Failed to optimize slide')
+                        progress_timer.active = False
+                        return
+                    progress_label.set_text(f'{int(value * 100)}%')
+
+                progress_timer = ui.timer(0.2, refresh_progress_card)
 
                 try:
-                    success = await run_tiling_process(wsi.file_path, storage_path)
+                    success = await run.io_bound(convert_svs_to_dzi, wsi.file_path, storage_path, update_progress)
                 except Exception as ex:
+                    with progress_lock:
+                        progress_state['failed'] = True
+                    refresh_progress_card()
                     ui.notify(f"Slide optimization failed: {ex}", type="negative")
                     return
 
                 if not success:
+                    with progress_lock:
+                        progress_state['failed'] = True
+                    refresh_progress_card()
                     ui.notify("Failed to optimize slide for viewing", type="negative")
                     return
 
                 if not os.path.exists(dzi_path):
+                    with progress_lock:
+                        progress_state['failed'] = True
+                    refresh_progress_card()
                     ui.notify("Slide optimization finished but .dzi file was not found", type="negative")
                     return
 
-                loading_dialog.close()
-                dialog_open = False
-                ui.navigate.to(f"/viewer/{normalized_patient_id}")
+                with progress_lock:
+                    progress_state['value'] = 1.0
+                    progress_state['ready'] = True
+                refresh_progress_card()
             except Exception as ex:
                 ui.notify(f"Unable to open viewer: {ex}", type="negative")
-            finally:
-                if dialog_open:
-                    loading_dialog.close()
 
     def open_report(case_id):
         """Membuka halaman laporan berdasarkan Case ID."""
