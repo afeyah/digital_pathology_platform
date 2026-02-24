@@ -1,44 +1,56 @@
 # File: app/pages/setup_page.py
 from nicegui import ui
 from app.database import crud
-# Import SessionLocal and UserRole from the main database file
 from app.database.create_database import SessionLocal, UserRole
 
 @ui.page('/setup')
 def setup_page():
     """
-    Fulfills Task 4: Redirects here on first login to create credentials.
+    Onboarding Setup Page: Triggered when the database is empty.
+    Allows the user to set their own initial Administrator credentials.
     """
     
-    with ui.card().classes('absolute-center w-96 p-8 shadow-lg rounded-lg'):
-        ui.label('Account Setup').classes('text-2xl font-bold text-center w-full mb-2')
-        ui.label('Create your administrative credentials.').classes('text-gray-500 text-center mb-6')
+    # Page layout with a centered, styled card
+    with ui.card().classes('absolute-center w-96 p-8 shadow-xl rounded-xl'):
+        ui.label('Platform Onboarding').classes('text-2xl font-bold text-center w-full mb-2 text-[#0056B3]')
+        ui.label('Create your primary Administrator account to get started.')\
+            .classes('text-gray-500 text-center mb-6')
 
-        # UI Input fields
-        full_name = ui.input('Full Name').classes('w-full').props('outlined')
-        username = ui.input('New Username').classes('w-full mt-2').props('outlined')
-        password = ui.input('New Password', password=True).classes('w-full mt-2').props('outlined')
+        # Credentials Input with Outlined Styling
+        full_name = ui.input('Full Name').classes('w-full').props('outlined dense')
+        username = ui.input('Choose Username').classes('w-full mt-2').props('outlined dense')
+        
+        # Masked password field for security
+        password = ui.input('Create Password', password=True)\
+            .classes('w-full mt-2')\
+            .props('outlined dense password-toggle-button')
 
         async def handle_setup():
-            if not all([full_name.value, username.value, password.value]):
-                ui.notify('Please fill in all fields', type='warning')
+            """
+            Validates inputs and creates the first system user.
+            """
+            if not all([full_name.value.strip(), username.value.strip(), password.value.strip()]):
+                ui.notify('All fields are required to secure the platform.', type='warning')
                 return
 
             try:
                 with SessionLocal() as db:
-                    # Use the UserRole enum instead of a string
+                    # Create the first user and assign ADMIN privileges
                     new_user = crud.create_user(
                         db=db, 
-                        name=full_name.value, 
-                        username=username.value, 
+                        name=full_name.value.strip(), 
+                        username=username.value.strip(), 
                         password=password.value, 
-                        role=UserRole.PATHOLOGIST 
+                        role=UserRole.ADMIN 
                     )
                     
                     if new_user:
-                        ui.notify('Account successfully created!', type='positive')
+                        ui.notify('Setup complete! Welcome to the platform.', type='positive')
+                        # Navigate to the login page to start the session
                         ui.navigate.to('/login') 
             except Exception as e:
-                ui.notify(f'Database error: {str(e)}', type='negative')
+                ui.notify(f'Critical Setup Error: {str(e)}', type='negative')
 
-        ui.button('Finish Setup', on_click=handle_setup).classes('w-full mt-6 py-2 bg-[#0056B3] text-white')
+        # Primary Action Button
+        ui.button('FINALIZE SYSTEM SETUP', on_click=handle_setup)\
+            .classes('w-full mt-6 py-3 bg-[#0056B3] text-white font-bold')

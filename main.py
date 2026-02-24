@@ -1,39 +1,104 @@
-# File: main.py
-from nicegui import ui
-from app.database.create_database import init_db, create_initial_users
+import os
+import sys
+from nicegui import ui, app as ng_app
 
-# Import all page modules to register their @ui.page decorators.
+from app.database import crud
+from app.database.create_database import init_db, SessionLocal
 
-from app.pages import (
-    login_page,      # URL: /login
-    setup_page,      # URL: /setup 
-    dashboard_page,  # URL: /dashboard 
-    viewer_page,     # URL: /viewer 
-    settings_page,   # URL: /settings 
-    report_page      # URL: /report
-)
+# ---------------------------------------------------------
+# Import pages individually (IMPORTANT for NiceGUI routing)
+# ---------------------------------------------------------
+import app.pages.login_page
+import app.pages.setup_page
+import app.pages.signup_page
+import app.pages.dashboard_page
+import app.pages.viewer_page
+import app.pages.report_page
+import app.pages.settings_page
 
-# Root route (Index) - Redirects new visitors to the Login page
+
+def _configure_stdio_for_unicode() -> None:
+    """Avoid Windows charmap failures when logging non-ASCII text."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, 'reconfigure'):
+            try:
+                stream.reconfigure(encoding='utf-8', errors='replace')
+            except Exception:
+                pass
+
+
+_configure_stdio_for_unicode()
+
+
+# =========================================================
+# ROOT ROUTER
+# =========================================================
 @ui.page('/')
 def index():
-    """Redirects the base URL to the login page."""
-    ui.navigate.to('/login')
+    """Main entry router."""
 
-# Application Theme and Branding for King Abdulaziz University
-ui.colors(primary='#0056B3', secondary='#26A69A', accent='#9C27B0')
+    with SessionLocal() as db:
 
-# Start the NiceGUI server
-if __name__ in {"__main__", "__mp_main__"}:
-    # 1. Initialize the database before the UI starts
-    # This creates the .db file and the default admin if they don't exist.
+        # First run -> setup
+        if not crud.has_any_user(db):
+            ui.navigate.to('/setup')
+            return
+
+        # Existing session
+        if ng_app.storage.user.get('username'):
+            ui.navigate.to('/dashboard')
+        else:
+            ui.navigate.to('/login')
+
+
+# =========================================================
+# APPLICATION STARTUP
+# =========================================================
+def startup():
+    """Initialize database and storage directory."""
+
+    # App-wide theme configuration (does not create UI elements).
+    ng_app.colors(
+        primary='#0056B3',
+        secondary='#26A69A',
+        accent='#9C27B0',
+    )
+
+    # 1️⃣ Initialize database
     init_db()
-    create_initial_users()
 
-    # 2. Run the application with Storage Secret
+    # 2️⃣ Load settings
+    with SessionLocal() as db:
+        crud.get_or_create_settings(db)
+        storage_path = crud.get_effective_path(db)
+
+    # 3️⃣ Ensure storage directory exists
+    os.makedirs(storage_path, exist_ok=True)
+
+    try:
+        ng_app.add_static_files('/wsi_static', storage_path, follow_symlink=True, max_cache_age=0)
+    except Exception as ex:
+        print(f'WSI static route registration warning: {ex}')
+
+    # 4️⃣ Diagnostics
+    print("\n--- DIGITAL PATHOLOGY PLATFORM ONLINE ---")
+    print(f"Project Directory : {os.getcwd()}")
+    print(f"WSI Storage Path  : {storage_path}")
+    print("Static folder     : /wsi_static")
+    print("------------------------------------------\n")
+
+    return storage_path
+
+
+# =========================================================
+# RUN SERVER
+# =========================================================
+if __name__ in {"__main__", "__mp_main__"}:
+
+    startup()
+
     ui.run(
-        title="Path-Benchmark Platform", 
+        title="Digital Pathology Platform",
         port=8080,
-        reload=True,
-        # MANDATORY for Task 5: Encrypts local WSI path settings
-        storage_secret='kau_pathology_2026_secret_key' 
+        storage_secret='kau_pathology_2026_secure_key',
     )
